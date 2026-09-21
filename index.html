@@ -2,92 +2,162 @@
 <html lang="vi">
 <head>
     <meta charset="UTF-8">
-    <meta name="viewport" content="width=device-width, initial-scale5.0">
-    <title>Dashboard Quét Mã QR - Đồ Án IoT</title>
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Thực Hành Lập Trình Nhúng - Giám Sát QR</title>
     <!-- Thư viện MQTT.js qua CDN -->
     <script src="https://cdnjs.cloudflare.com/ajax/libs/mqtt/4.3.7/mqtt.min.js"></script>
     <style>
         body { font-family: Arial, sans-serif; background-color: #f4f7f6; margin: 0; padding: 20px; }
-        .container { max-width: 800px; margin: auto; background: white; padding: 20px; border-radius: 8px; box-shadow: 0 4px 8px rgba(0,0,0,0.1); }
-        h2 { color: #333; text-align: center; }
-        table { width: 100%; border-collapse: collapse; margin-top: 20px; }
+        .container { max-width: 900px; margin: auto; background: white; padding: 25px; border-radius: 12px; box-shadow: 0 4px 12px rgba(0,0,0,0.1); }
+        
+        .header-top { display: flex; justify-content: space-between; align-items: center; border-bottom: 2px solid #eee; padding-bottom: 15px; margin-bottom: 20px; }
+        .header-top h2 { color: #2c3e50; margin: 0; }
+        #realtime-clock { font-size: 14px; color: #555; font-weight: bold; background: #eef2f3; padding: 6px 12px; border-radius: 6px; }
+
+        /* Bảng thống kê tổng quan */
+        .stats-box { display: flex; gap: 20px; margin-bottom: 20px; }
+        .stat-card { flex: 1; background: #f8f9fa; border-left: 5px solid #4CAF50; padding: 15px; border-radius: 6px; box-shadow: 0 2px 4px rgba(0,0,0,0.05); }
+        .stat-card h4 { margin: 0 0 5px 0; color: #666; font-size: 14px; }
+        .stat-card .value { font-size: 22px; font-weight: bold; color: #2c3e50; }
+
+        .status { padding: 10px 15px; border-radius: 6px; font-weight: bold; margin-bottom: 20px; text-align: center; transition: 0.3s; }
+        .status.connecting { background-color: #fff3cd; color: #856404; border: 1px solid #ffeeba; }
+        .status.connected { background-color: #d4edda; color: #155724; border: 1px solid #c3e6cb; }
+        .status.offline { background-color: #f8d7da; color: #721c24; border: 1px solid #f5c6cb; }
+
+        table { width: 100%; border-collapse: collapse; margin-top: 10px; }
         th, td { border: 1px solid #ddd; padding: 12px; text-align: left; }
         th { background-color: #4CAF50; color: white; }
-        tr:nth-child(even) { background-color: #f2f2f2; }
-        .status { text-align: center; font-weight: bold; margin-bottom: 15px; color: #555; }
+        tr:nth-child(even) { background-color: #f9f9f9; }
     </style>
 </head>
 <body>
 
 <div class="container">
-    <h2>Hệ Thống Giám Sát Quét Mã QR Trực Tuyến</h2>
-    <div id="status" class="status">Trạng thái: Đang kết nối tới MQTT Cloud...</div>
+    <!-- Tiêu đề và Đồng hồ thời gian thực -->
+    <div class="header-top">
+        <h2>Thực Hành Lập Trình Nhúng</h2>
+        <div id="realtime-clock">Đang cập nhật thời gian...</div>
+    </div>
 
+    <!-- Trạng thái kết nối (Có cơ chế timeout 10s) -->
+    <div id="status" class="status connecting">Trạng thái: Đang kết nối tới MQTT Cloud...</div>
+
+    <!-- Bảng thông số chung -->
+    <div class="stats-box">
+        <div class="stat-card">
+            <h4>Tổng số mã đã quét (Hôm nay)</h4>
+            <div class="value" id="today-count">0</div>
+        </div>
+        <div class="stat-card" style="border-left-color: #007bff;">
+            <h4>Trạng thái hệ thống</h4>
+            <div class="value" id="system-state" style="font-size: 18px; margin-top: 4px;">Đang khởi động...</div>
+        </div>
+    </div>
+
+    <!-- Bảng danh sách mã QR -->
+    <h3>Nhật ký quét mã trực tuyến</h3>
     <table>
         <thead>
             <tr>
-                <th>STT</th>
-                <th>Thời gian quét</th>
-                <th>Nội dung mã hàng / Dữ liệu</th>
+                <th style="width: 10%;">STT</th>
+                <th style="width: 30%;">Thời gian quét</th>
+                <th style="width: 60%;">Nội dung mã hàng / Dữ liệu</th>
             </tr>
-        스와 -->
+        </thead>
         <tbody id="log-table">
-            <!-- Dữ liệu quét sẽ được tự động thêm vào đây -->
+            <!-- Dữ liệu quét sẽ tự động được thêm vào đây -->
         </tbody>
     </table>
 </div>
 
 <script>
-    // --- CẤU HÌNH THÔNG SỐ MQTT CỦA BẠN ---
-    const brokerUrl = 'wss://mqtt-ce2.iotlabs.vn:443/mqtt'; // Dùng cổng WSS cho trình duyệt web
+    // 1. Đồng hồ thời gian thực
+    function updateClock() {
+        const now = new Date();
+        const options = { 
+            weekday: 'long', year: 'numeric', month: '2-digit', day: '2-digit', 
+            hour: '2-digit', minute: '2-digit', second: '2-digit', hour12: false 
+        };
+        document.getElementById('realtime-clock').innerText = now.toLocaleDateString('vi-VN', options);
+    }
+    setInterval(updateClock, 1000);
+    updateClock();
+
+    // 2. Cấu hình MQTT & Timeout kiểm tra 10s
+    const brokerUrl = 'wss://mqtt-ce2.iotlabs.vn:443/mqtt';
     const topic = 'devices/iotlabs_a678b26967807';
     const options = {
-        clientId: 'web_client_' + Math.random().toString(16.substring(2, 8)),
+        clientId: 'web_client_' + Math.random().toString(16).substring(2, 8),
         username: 'device_a678b26967807',
         password: '12d8b553344992ab78dd5d81828eb35f',
         clean: true
     };
 
     const statusDiv = document.getElementById('status');
+    const systemStateDiv = document.getElementById('system-state');
     const tableBody = document.getElementById('log-table');
+    const todayCountEl = document.getElementById('today-count');
+    
     let stt = 1;
+    let scanCountToday = 0;
+    let connectionTimeout;
 
-    // Kết nối tới MQTT Broker
-    console.log("Đang kết nối...");
+    // Thiết lập bộ đếm 10 giây: Nếu quá 10s không kết nối được -> Báo OFF
+    function resetConnectionTimer() {
+        clearTimeout(connectionTimeout);
+        connectionTimeout = setTimeout(() => {
+            statusDiv.className = "status offline";
+            statusDiv.innerHTML = "⚠️ Cảnh báo: Mất kết nối! Máy đang OFF hoặc không có tín hiệu.";
+            systemStateDiv.innerText = "OFFLINE";
+            systemStateDiv.style.color = "red";
+        }, 10000); // 10000 ms = 10 giây
+    }
+
+    console.log("Đang kết nối MQTT...");
+    resetConnectionTimer(); // Bắt đầu đếm ngược 10s
+
     const client = mqtt.connect(brokerUrl, options);
 
     client.on('connect', function () {
+        resetConnectionTimer(); // Xóa timer cũ khi kết nối thành công
+        statusDiv.className = "status connected";
         statusDiv.innerHTML = "Trạng thái: Đã kết nối thành công tới Cloud (Sẵn sàng nhận dữ liệu)";
-        statusDiv.style.color = "green";
+        systemStateDiv.innerText = "ONLINE (Đang hoạt động)";
+        systemStateDiv.style.color = "green";
+
         client.subscribe(topic, function (err) {
-            if (!err) {
-                console.log("Đã đăng ký theo dõi topic thành công!");
-            }
+            if (!err) console.log("Đã đăng ký theo dõi topic thành công!");
         });
     });
 
     client.on('error', function (error) {
+        statusDiv.className = "status offline";
         statusDiv.innerHTML = "Trạng thái: Lỗi kết nối MQTT!";
-        statusDiv.style.color = "red";
-        console.log(error);
+        systemStateDiv.innerText = "LỖI KẾT NỐI";
+        systemStateDiv.style.color = "red";
     });
 
-    // Khi có tin nhắn (dữ liệu quét QR) gửi tới từ thiết bị
+    // Khi nhận được dữ liệu quét QR từ thiết bị đẩy lên
     client.on('message', function (topic, message) {
+        // Mỗi khi có tin nhắn đến nghĩa là thiết bị đang online -> Reset lại đồng hồ 10s
+        resetConnectionTimer();
+
         let msgStr = message.toString();
-        console.log("Nhận được dữ liệu: " + msgStr);
+        let thoiGianNhan = new Date().toLocaleString('vi-VN');
 
-        // Tách dữ liệu hiển thị (giả sử dữ liệu nhận được có định dạng chuỗi)
-        let thoiGianNhan = new Date().toLocaleString();
+        // Tăng bộ đếm số lượng quét trong ngày
+        scanCountToday++;
+        todayCountEl.innerText = scanCountToday;
 
-        // Thêm một dòng mới vào bảng hiển thị
+        // Thêm dòng mới lên đầu bảng
         let newRow = `<tr>
             <td>${stt++}</td>
             <td>${thoiGianNhan}</td>
             <td><b>${msgStr}</b></td>
         </tr>`;
         
-        tableBody.insertAdjacentHTML('afterbegin', newRow); // Đưa dòng mới lên đầu bảng
+        tableBody.insertAdjacentHTML('afterbegin', newRow);
     });
 </script>
 
