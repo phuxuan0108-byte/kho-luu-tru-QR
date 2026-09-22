@@ -133,7 +133,9 @@
         clientId: 'web_client_' + Math.random().toString(16).substring(2, 8),
         username: 'device_a678b26967807',
         password: '12d8b553344992ab78dd5d81828eb35f',
-        clean: true
+        clean: true,
+        reconnectPeriod: 1000, // Tự động kết nối lại sau 1 giây nếu rớt mạng
+        connectTimeout: 5000
     };
 
     const statusDiv = document.getElementById('status');
@@ -150,7 +152,7 @@
         clearTimeout(connectionTimeout);
         connectionTimeout = setTimeout(() => {
             statusDiv.className = "status offline";
-            statusDiv.innerHTML = "⚠️ Cảnh báo: Mất kết nối! Máy đang OFF hoặc không có tín hiệu.";
+            statusDiv.innerHTML = "⚠️ Cảnh báo: Mất kết nối! Máy đang OFF hoặc chưa bật chương trình Python.";
             systemStateDiv.innerText = "OFFLINE";
             systemStateDiv.style.color = "#fca5a5";
         }, 10000); // 10000 ms = 10 giây
